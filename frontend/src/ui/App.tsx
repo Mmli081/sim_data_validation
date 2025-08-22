@@ -1,0 +1,427 @@
+import React, { useEffect, useMemo, useState } from 'react'
+
+type Model = 'payroll' | 'loan'
+
+type FileItem = { 
+  name: string; 
+  hasResult: boolean;
+  status: 'unreviewed' | 'reviewed' | 'no_result';
+}
+
+type ModelsResponse = Array<{
+  model: Model
+  pdfs: string[]
+  unreviewedCount: number
+  reviewedCount: number
+}>
+
+type FilesResponse = {
+  model: Model
+  unreviewed: FileItem[]
+  reviewed: FileItem[]
+  noResult: FileItem[]
+}
+
+type ResultResponse = { 
+  file: string; 
+  data: Record<string, any>;
+  status: 'unreviewed' | 'reviewed';
+}
+
+async function getModels(): Promise<ModelsResponse> {
+  const res = await fetch('/api/models')
+  return res.json()
+}
+
+async function listFiles(model: Model): Promise<FilesResponse> {
+  const res = await fetch(`/api/${model}/files`)
+  return res.json()
+}
+
+async function getResult(model: Model, file: string): Promise<ResultResponse> {
+  const url = new URL(`/api/${model}/result`, window.location.origin)
+  url.searchParams.set('file', file)
+  const res = await fetch(url.toString())
+  if (!res.ok) throw new Error('No result')
+  return res.json()
+}
+
+async function saveResult(model: Model, file: string, data: Record<string, any>): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`/api/${model}/result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file, data }),
+  })
+  if (!res.ok) throw new Error('Save failed')
+  return res.json()
+}
+
+async function markAsReviewed(model: Model, file: string): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`/api/${model}/mark-reviewed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file }),
+  })
+  if (!res.ok) throw new Error('Mark as reviewed failed')
+  return res.json()
+}
+
+async function markAsUnreviewed(model: Model, file: string): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`/api/${model}/mark-unreviewed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file }),
+  })
+  if (!res.ok) throw new Error('Mark as unreviewed failed')
+  return res.json()
+}
+
+export function App() {
+  const [models, setModels] = useState<ModelsResponse>([])
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null)
+
+  useEffect(() => {
+    getModels().then(setModels).catch(() => setModels([]))
+  }, [])
+
+  if (!selectedModel) {
+    return <ModelPicker models={models} onPick={setSelectedModel} />
+  }
+
+  return <ModelView model={selectedModel} onBack={() => setSelectedModel(null)} />
+}
+
+function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
+  const [filesData, setFilesData] = useState<FilesResponse | null>(null)
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [result, setResult] = useState<Record<string, any> | null>(null)
+  const [edited, setEdited] = useState<Record<string, any> | null>(null)
+  const [fileStatus, setFileStatus] = useState<'unreviewed' | 'reviewed' | null>(null)
+  const [activeTab, setActiveTab] = useState<'unreviewed' | 'reviewed'>('unreviewed')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadFiles()
+  }, [model])
+
+  const loadFiles = async () => {
+    try {
+      const data = await listFiles(model)
+      setFilesData(data)
+    } catch (e) {
+      setFilesData(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedFile) return
+    setLoading(true)
+    setResult(null)
+    setEdited(null)
+    setMessage(null)
+    getResult(model, selectedFile)
+      .then((r) => { 
+        setResult(r.data)
+        setEdited(r.data)
+        setFileStatus(r.status)
+      })
+      .catch(() => { 
+        setResult({})
+        setEdited({})
+        setFileStatus(null)
+      })
+      .finally(() => setLoading(false))
+  }, [model, selectedFile])
+
+  const pdfUrl = useMemo(() => {
+    if (!selectedFile) return null
+    return `/api/${model}/pdf/${encodeURIComponent(selectedFile)}`
+  }, [model, selectedFile])
+
+  function onChangeField(key: string, value: any) {
+    setEdited((prev) => ({ ...(prev || {}), [key]: value }))
+  }
+
+  async function onSave() {
+    if (!selectedFile || !edited) return
+    setSaving(true)
+    setMessage(null)
+    try {
+      const resp = await saveResult(model as Model, selectedFile, edited)
+      setMessage(resp.message)
+      await loadFiles()
+    } catch (e) {
+      setMessage('Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onMarkReviewed() {
+    if (!selectedFile) return
+    try {
+      setMessage(null)
+      await markAsReviewed(model, selectedFile)
+      setMessage('Marked as reviewed')
+      await loadFiles()
+      setFileStatus('reviewed')
+    } catch (e) {
+      setMessage('Failed to mark as reviewed')
+    }
+  }
+
+  async function onMarkUnreviewed() {
+    if (!selectedFile) return
+    try {
+      setMessage(null)
+      await markAsUnreviewed(model, selectedFile)
+      setMessage('Moved to unreviewed')
+      await loadFiles()
+      setFileStatus('unreviewed')
+    } catch (e) {
+      setMessage('Failed to move to unreviewed')
+    }
+  }
+
+  return (
+    <div className="app">
+      <div className="header">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="button" onClick={onBack}>Back</button>
+          <div>{model.toUpperCase()} Review</div>
+        </div>
+        <div className="toolbar">
+          {selectedFile && (
+            <>
+              <button className="button primary" disabled={!edited || saving} onClick={onSave}>
+                {saving ? 'Saving...' : 'Save Result'}
+              </button>
+              {fileStatus === 'unreviewed' && (
+                <button className="button" onClick={onMarkReviewed}>
+                  Mark as Reviewed
+                </button>
+              )}
+              {fileStatus === 'reviewed' && (
+                <button className="button" onClick={onMarkUnreviewed}>
+                  Move to Unreviewed
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <aside className="sidebar">
+        <div>
+          <div className="model-heading">{model}</div>
+          
+          {/* Tabs */}
+          <div className="tabs">
+            <button
+              className={`tab ${activeTab === 'unreviewed' ? 'active' : ''}`}
+              onClick={() => setActiveTab('unreviewed')}
+            >
+              Unreviewed ({filesData?.unreviewed.length || 0})
+            </button>
+            <button
+              className={`tab ${activeTab === 'reviewed' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reviewed')}
+            >
+              Reviewed ({filesData?.reviewed.length || 0})
+            </button>
+          </div>
+
+          {/* Files list per active tab */}
+          <div style={{ marginBottom: 20 }}>
+            {(activeTab === 'unreviewed' ? filesData?.unreviewed : filesData?.reviewed)?.map((f) => {
+              const active = selectedFile === f.name
+              const isUnreviewed = activeTab === 'unreviewed'
+              return (
+                <div key={f.name} className={`file-item ${active ? 'active' : ''}`} onClick={() => setSelectedFile(f.name)}>
+                  <div className={`dot ${isUnreviewed ? 'orange' : 'green'}`} />
+                  <div className="file-name" title={f.name}>{f.name}</div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Files without results */}
+          {(filesData?.noResult.length || 0) > 0 && (
+            <div>
+              <h4 style={{ margin: '10px 0 5px 0', fontSize: 14, color: '#666' }}>
+                No Results ({filesData?.noResult.length || 0})
+              </h4>
+              {filesData?.noResult.map((f) => {
+                const active = selectedFile === f.name
+                return (
+                  <div key={f.name} className={`file-item ${active ? 'active' : ''}`} onClick={() => setSelectedFile(f.name)}>
+                    <div className="dot gray" />
+                    <div className="file-name" title={f.name}>{f.name}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </aside>
+      <main className="content">
+        <div className="card">
+          <h3>Document</h3>
+          <div className="body">
+            {pdfUrl ? (
+              <iframe className="pdf-frame" src={pdfUrl} />
+            ) : (
+              <div>Select a file to preview</div>
+            )}
+          </div>
+        </div>
+        <div className="card">
+          <h3>
+            Extracted Result 
+            {fileStatus && (
+              <span style={{ 
+                marginLeft: 8, 
+                padding: '2px 8px', 
+                fontSize: 12, 
+                borderRadius: 4,
+                background: fileStatus === 'reviewed' ? '#d4edda' : '#fff3cd',
+                color: fileStatus === 'reviewed' ? '#155724' : '#856404'
+              }}>
+                {fileStatus}
+              </span>
+            )}
+            {message && (
+              <span style={{ marginLeft: 8, color: '#9fb0c3', fontWeight: 400, fontSize: 12 }}>
+                ({message})
+              </span>
+            )}
+          </h3>
+          <div className="body">
+            {loading ? (
+              <div>Loading...</div>
+            ) : selectedFile ? (
+              <ResultEditor data={edited || {}} onChange={onChangeField} />
+            ) : (
+              <div>Select a file to view result</div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function ModelPicker({ models, onPick }: { models: ModelsResponse; onPick: (m: Model) => void }) {
+  const modelData = {
+    payroll: models.find((m) => m.model === 'payroll'),
+    loan: models.find((m) => m.model === 'loan'),
+  }
+  
+  return (
+    <div className="splash">
+      <div className="splash-title">Choose model to review</div>
+      <div className="tiles">
+        {(['payroll', 'loan'] as Model[]).map((m) => {
+          const data = modelData[m]
+          return (
+            <button key={m} className="tile" onClick={() => onPick(m)}>
+              <div className="tile-title">{m.toUpperCase()}</div>
+              <div className="tile-sub">
+                Unreviewed: {data?.unreviewedCount ?? 0} | Reviewed: {data?.reviewedCount ?? 0}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ResultEditor({ data, onChange }: { data: Record<string, any>; onChange: (key: string, value: any) => void }) {
+  const entries = Object.entries(data)
+  return (
+    <div className="json-editor">
+      {entries.length === 0 && <div style={{ color: '#9fb0c3' }}>No result available.</div>}
+      {entries.map(([key, value]) => (
+        <div className="row" key={key}>
+          <div className="kv-label">{key}</div>
+          {Array.isArray(value) ? (
+            (value as any[]).every((v) => typeof v === 'object' && v !== null)
+              ? (
+                <ArrayOfObjectsEditor items={value as Array<Record<string, any>>} onChange={(items) => onChange(key, items)} />
+              )
+              : (
+                <textarea className="textarea" value={(value as any[]).join('\n')} onChange={(e) => onChange(key, e.target.value.split('\n').filter(Boolean))} />
+              )
+          ) : typeof value === 'object' && value !== null ? (
+            <textarea className="textarea" value={JSON.stringify(value, null, 2)} onChange={(e) => {
+              try { onChange(key, JSON.parse(e.target.value)) } catch {
+                onChange(key, e.target.value)
+              }
+            }} />
+          ) : (
+            <input className="input" value={String(value ?? '')} onChange={(e) => {
+              const v = e.target.value
+              if (v === '') { onChange(key, '') ; return }
+              if (/^[-]?[0-9]+(\.[0-9]+)?$/.test(v)) onChange(key, Number(v))
+              else onChange(key, v)
+            }} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ObjectFieldsEditor({ obj, onChange }: { obj: Record<string, any>; onChange: (next: Record<string, any>) => void }) {
+  return (
+    <div className="json-editor">
+      {Object.entries(obj).map(([k, v]) => (
+        <div className="row" key={k}>
+          <div className="kv-label">{k}</div>
+          {Array.isArray(v) || (typeof v === 'object' && v !== null) ? (
+            <textarea className="textarea" value={JSON.stringify(v, null, 2)} onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value)
+                onChange({ ...obj, [k]: parsed })
+              } catch {
+                onChange({ ...obj, [k]: e.target.value })
+              }
+            }} />
+          ) : (
+            <input className="input" value={String(v ?? '')} onChange={(e) => {
+              const val = e.target.value
+              const next = { ...obj }
+              if (val === '') next[k] = ''
+              else if (/^[-]?[0-9]+(\.[0-9]+)?$/.test(val)) next[k] = Number(val)
+              else if (val === 'true' || val === 'false') next[k] = val === 'true'
+              else next[k] = val
+              onChange(next)
+            }} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ArrayOfObjectsEditor({ items, onChange }: { items: Array<Record<string, any>>; onChange: (next: Array<Record<string, any>>) => void }) {
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {items.map((item, idx) => (
+        <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--panel)' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>Item {idx + 1}</div>
+          <ObjectFieldsEditor obj={item} onChange={(nextObj) => {
+            const next = items.slice()
+            next[idx] = nextObj
+            onChange(next)
+          }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
+
