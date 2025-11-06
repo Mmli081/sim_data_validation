@@ -65,6 +65,53 @@ This application provides a systematic approach to validate PDF documents by:
 3. **Access the application**:
    Open your browser and navigate to `http://localhost:5174`
 
+## Docker Deployment
+
+### Prerequisites
+
+- Docker (version 20.10 or higher)
+- Docker Compose (version 2.0 or higher)
+
+### Quick Start with Docker
+
+1. **Build and start all services**:
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Access the application**:
+   - Frontend: `http://localhost:5174`
+   - Backend API: `http://localhost:5178`
+
+3. **View logs**:
+   ```bash
+   docker-compose logs -f
+   ```
+
+4. **Stop all services**:
+   ```bash
+   docker-compose down
+   ```
+
+### Docker Commands
+
+- **Build images**: `docker-compose build`
+- **Start services**: `docker-compose up -d`
+- **Stop services**: `docker-compose stop`
+- **Remove containers**: `docker-compose down`
+- **View logs**: `docker-compose logs -f [service_name]`
+- **Rebuild and restart**: `docker-compose up -d --build`
+
+### Docker Architecture
+
+- **Backend**: Node.js/Express service running on port 5178
+- **Frontend**: Nginx serving built React application on port 80 (mapped to 5174)
+- **Data Volume**: The `data/` directory is mounted as a volume for persistent storage
+
+### Data Persistence
+
+The `data/` directory is mounted as a volume, so all PDF files and JSON results persist between container restarts. Changes made through the application are saved directly to the host filesystem.
+
 ## Project Structure
 
 ```
@@ -72,7 +119,9 @@ sim_data_validation/
 ├── backend/                 # Node.js/Express API server
 │   ├── server.js           # Main server file
 │   ├── package.json        # Backend dependencies
-│   └── package-lock.json
+│   ├── package-lock.json
+│   ├── Dockerfile           # Backend Docker image
+│   └── .dockerignore        # Docker ignore file
 ├── frontend/               # React/TypeScript frontend
 │   ├── src/
 │   │   ├── main.tsx       # Entry point
@@ -82,16 +131,20 @@ sim_data_validation/
 │   ├── index.html         # HTML template
 │   ├── vite.config.ts     # Vite configuration
 │   ├── package.json       # Frontend dependencies
-│   └── tsconfig.json      # TypeScript configuration
-└── data/                  # Document storage
-    ├── loan/              # Loan contract PDFs
-    │   ├── *.pdf         # PDF documents
-    │   ├── loan_result.json           # Unreviewed results
-    │   └── loan_result_reviewed.json  # Reviewed results
-    └── payroll/           # Payroll document PDFs
-        ├── *.pdf         # PDF documents
-        ├── payroll_result.json        # Unreviewed results
-        └── payroll_result_reviewed.json # Reviewed results
+│   ├── tsconfig.json      # TypeScript configuration
+│   ├── Dockerfile         # Frontend Docker image
+│   ├── nginx.conf         # Nginx configuration for production
+│   └── .dockerignore      # Docker ignore file
+├── data/                  # Document storage
+│   ├── loan/              # Loan contract PDFs
+│   │   ├── *.pdf         # PDF documents
+│   │   ├── loan_result.json           # Unreviewed results
+│   │   └── loan_result_reviewed.json  # Reviewed results
+│   └── payroll/           # Payroll document PDFs
+│       ├── *.pdf         # PDF documents
+│       ├── payroll_result.json        # Unreviewed results
+│       └── payroll_result_reviewed.json # Reviewed results
+└── docker-compose.yml     # Docker Compose configuration
 ```
 
 ## Features
