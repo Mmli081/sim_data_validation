@@ -299,6 +299,33 @@ app.post('/api/upload-pdf', upload.single('pdf'), (req, res) => {
   }
 });
 
+// Download all result data for a model
+app.get('/api/:model/download-data', (req, res) => {
+  const model = req.params.model;
+  
+  try {
+    const { unreviewed, reviewed } = readResultsFiles(model);
+    
+    // Combine all data
+    const allData = {
+      model: model,
+      unreviewed: unreviewed,
+      reviewed: reviewed,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Set headers for file download
+    const filename = `${model}_results_${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    res.json(allData);
+  } catch (error) {
+    console.error('Error downloading data:', error);
+    res.status(500).json({ error: 'Failed to download data' });
+  }
+});
+
 // Static serving of data directory (for direct PDF linking if needed)
 app.use('/data', express.static(dataRoot));
 

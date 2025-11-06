@@ -93,6 +93,38 @@ async function uploadPDF(file: File, model: Model): Promise<{ ok: boolean; messa
   return res.json()
 }
 
+async function downloadModelData(model: Model): Promise<void> {
+  try {
+    const res = await fetch(`/api/${model}/download-data`)
+    if (!res.ok) {
+      throw new Error('Download failed')
+    }
+    
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    
+    // Get filename from Content-Disposition header or use default
+    const contentDisposition = res.headers.get('Content-Disposition')
+    let filename = `${model}_results.json`
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="(.+)"/)
+      if (filenameMatch) {
+        filename = filenameMatch[1]
+      }
+    }
+    
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : 'Download failed')
+  }
+}
+
 export function App() {
   const [models, setModels] = useState<ModelsResponse>([])
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
@@ -122,6 +154,7 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     loadFiles()
@@ -206,6 +239,19 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
     }
   }
 
+  async function onDownloadData() {
+    try {
+      setDownloading(true)
+      setMessage(null)
+      await downloadModelData(model)
+      setMessage('Data downloaded successfully')
+    } catch (e) {
+      setMessage('Failed to download data')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div className="app">
       <div className="header">
@@ -214,6 +260,14 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
           <div>{model.toUpperCase()} Review</div>
         </div>
         <div className="toolbar">
+          <button 
+            className="button" 
+            onClick={onDownloadData}
+            disabled={downloading}
+            style={{ marginRight: 'auto' }}
+          >
+            {downloading ? 'Downloading...' : 'Download Data'}
+          </button>
           {selectedFile && (
             <>
               <button className="button primary" disabled={!edited || saving} onClick={onSave}>
