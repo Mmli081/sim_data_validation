@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,6 +11,19 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// Configure multer for file uploads
+const upload = multer({ 
+  dest: '/tmp/',
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
+    }
+  }
+});
 
 // Adjust this base directory to point to the data folder
 const projectRoot = path.resolve(__dirname, '..');
@@ -232,6 +246,56 @@ app.post('/api/:model/mark-unreviewed', (req, res) => {
   } catch (error) {
     console.error('Error moving to unreviewed:', error);
     res.status(500).json({ error: 'Failed to move file to unreviewed' });
+  }
+});
+
+// Upload PDF file to data repository
+app.post('/api/upload-pdf', upload.single('pdf'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { model } = req.body || {};
+    if (!model || !['loan', 'payroll'].includes(model)) {
+      // Clean up uploaded file if model is invalid
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Valid model (loan or payroll) is required' });
+    }
+
+    const modelDir = path.join(dataRoot, model);
+    if (!fs.existsSync(modelDir)) {
+      fs.mkdirSync(modelDir, { recursive: true });
+    }
+
+    // Get original filename or use the uploaded filename
+    const originalName = req.body.filename || req.file.originalname || 'uploaded.pdf';
+    const sanitizedFilename = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const targetPath = path.join(modelDir, sanitizedFilename);
+
+    // Check if file already exists
+    if (fs.existsSync(targetPath)) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      return res.status(409).json({ error: 'File with this name already exists' });
+    }
+
+    // Move file from temp location to data directory
+    fs.renameSync(req.file.path, targetPath);
+
+    res.json({ 
+      ok: true, 
+      message: 'PDF uploaded successfully',
+      filename: sanitizedFilename,
+      model: model
+    });
+  } catch (error) {
+    console.error('Error uploading PDF:', error);
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: 'Failed to upload PDF: ' + error.message });
   }
 });
 

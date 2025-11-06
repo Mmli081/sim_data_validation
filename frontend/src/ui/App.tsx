@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 
 type Model = 'payroll' | 'loan'
 
@@ -76,6 +76,23 @@ async function markAsUnreviewed(model: Model, file: string): Promise<{ ok: boole
   return res.json()
 }
 
+async function uploadPDF(file: File, model: Model): Promise<{ ok: boolean; message: string; filename?: string }> {
+  const formData = new FormData()
+  formData.append('pdf', file)
+  formData.append('model', model)
+  formData.append('filename', file.name)
+  
+  const res = await fetch('/api/upload-pdf', {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(error.error || 'Upload failed')
+  }
+  return res.json()
+}
+
 export function App() {
   const [models, setModels] = useState<ModelsResponse>([])
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
@@ -84,8 +101,12 @@ export function App() {
     getModels().then(setModels).catch(() => setModels([]))
   }, [])
 
+  const refreshModels = () => {
+    getModels().then(setModels).catch(() => setModels([]))
+  }
+
   if (!selectedModel) {
-    return <ModelPicker models={models} onPick={setSelectedModel} />
+    return <ModelPicker models={models} onPick={setSelectedModel} onUpload={refreshModels} />
   }
 
   return <ModelView model={selectedModel} onBack={() => setSelectedModel(null)} />
@@ -312,10 +333,59 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
   )
 }
 
-function ModelPicker({ models, onPick }: { models: ModelsResponse; onPick: (m: Model) => void }) {
+function ModelPicker({ models, onPick, onUpload }: { models: ModelsResponse; onPick: (m: Model) => void; onUpload: () => void }) {
   const modelData = {
     payroll: models.find((m) => m.model === 'payroll'),
     loan: models.find((m) => m.model === 'loan'),
+  }
+  
+  const [uploading, setUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [selectedUploadModel, setSelectedUploadModel] = useState<Model | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    if (!selectedUploadModel) {
+      setUploadMessage('Please select a model first')
+      return
+    }
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadMessage('Please select a PDF file')
+      return
+    }
+
+    handleUpload(file, selectedUploadModel)
+  }
+
+  const handleUpload = async (file: File, model: Model) => {
+    setUploading(true)
+    setUploadMessage(null)
+    
+    try {
+      const result = await uploadPDF(file, model)
+      setUploadMessage(result.message || 'Upload successful!')
+      onUpload() // Refresh the models list
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleUploadButtonClick = () => {
+    if (!selectedUploadModel) {
+      setUploadMessage('Please select a model first')
+      return
+    }
+    fileInputRef.current?.click()
   }
   
   return (
@@ -333,6 +403,59 @@ function ModelPicker({ models, onPick }: { models: ModelsResponse; onPick: (m: M
             </button>
           )
         })}
+      </div>
+      
+      <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', width: 'min(900px, 100%)' }}>
+        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>Upload PDF to Data Repository</div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(['loan', 'payroll'] as Model[]).map((m) => (
+              <button
+                key={m}
+                className={`button ${selectedUploadModel === m ? 'primary' : ''}`}
+                onClick={() => {
+                  setSelectedUploadModel(m)
+                  setUploadMessage(null)
+                }}
+                style={{ fontSize: 14 }}
+              >
+                {m.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+          <button
+            className="button"
+            onClick={handleUploadButtonClick}
+            disabled={uploading || !selectedUploadModel}
+            style={{ fontSize: 14 }}
+          >
+            {uploading ? 'Uploading...' : 'Select PDF'}
+          </button>
+        </div>
+        {uploadMessage && (
+          <div style={{ 
+            padding: '8px 16px', 
+            borderRadius: 8, 
+            fontSize: 14,
+            background: uploadMessage.includes('success') || uploadMessage.includes('successfully') 
+              ? '#d4edda' 
+              : '#f8d7da',
+            color: uploadMessage.includes('success') || uploadMessage.includes('successfully')
+              ? '#155724'
+              : '#721c24',
+            maxWidth: '100%',
+            textAlign: 'center'
+          }}>
+            {uploadMessage}
+          </div>
+        )}
       </div>
     </div>
   )
