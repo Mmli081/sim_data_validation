@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 
-type Model = 'payroll' | 'loan'
+type Model = string
 
 type FileItem = { 
   name: string; 
@@ -388,11 +388,6 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
 }
 
 function ModelPicker({ models, onPick, onUpload }: { models: ModelsResponse; onPick: (m: Model) => void; onUpload: () => void }) {
-  const modelData = {
-    payroll: models.find((m) => m.model === 'payroll'),
-    loan: models.find((m) => m.model === 'loan'),
-  }
-  
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [selectedUploadModel, setSelectedUploadModel] = useState<Model | null>(null)
@@ -446,13 +441,12 @@ function ModelPicker({ models, onPick, onUpload }: { models: ModelsResponse; onP
     <div className="splash">
       <div className="splash-title">Choose model to review</div>
       <div className="tiles">
-        {(['payroll', 'loan'] as Model[]).map((m) => {
-          const data = modelData[m]
+        {models.map((modelData) => {
           return (
-            <button key={m} className="tile" onClick={() => onPick(m)}>
-              <div className="tile-title">{m.toUpperCase()}</div>
+            <button key={modelData.model} className="tile" onClick={() => onPick(modelData.model)}>
+              <div className="tile-title">{modelData.model.toUpperCase()}</div>
               <div className="tile-sub">
-                Unreviewed: {data?.unreviewedCount ?? 0} | Reviewed: {data?.reviewedCount ?? 0}
+                Unreviewed: {modelData.unreviewedCount ?? 0} | Reviewed: {modelData.reviewedCount ?? 0}
               </div>
             </button>
           )
@@ -463,17 +457,17 @@ function ModelPicker({ models, onPick, onUpload }: { models: ModelsResponse; onP
         <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>Upload PDF to Data Repository</div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            {(['loan', 'payroll'] as Model[]).map((m) => (
+            {models.map((modelData) => (
               <button
-                key={m}
-                className={`button ${selectedUploadModel === m ? 'primary' : ''}`}
+                key={modelData.model}
+                className={`button ${selectedUploadModel === modelData.model ? 'primary' : ''}`}
                 onClick={() => {
-                  setSelectedUploadModel(m)
+                  setSelectedUploadModel(modelData.model)
                   setUploadMessage(null)
                 }}
                 style={{ fontSize: 14 }}
               >
-                {m.toUpperCase()}
+                {modelData.model.toUpperCase()}
               </button>
             ))}
           </div>

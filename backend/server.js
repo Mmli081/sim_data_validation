@@ -29,6 +29,28 @@ const upload = multer({
 const projectRoot = path.resolve(__dirname, '..');
 const dataRoot = path.join(projectRoot, 'data');
 
+// Discover available models dynamically from data directory
+function discoverModels() {
+  if (!fs.existsSync(dataRoot)) return [];
+  
+  const entries = fs.readdirSync(dataRoot, { withFileTypes: true });
+  const models = entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .filter(name => {
+      // Only include directories that have the expected structure (at least one PDF or result file)
+      const dir = path.join(dataRoot, name);
+      const dirEntries = fs.readdirSync(dir);
+      return dirEntries.some(f => 
+        f.toLowerCase().endsWith('.pdf') || 
+        f.toLowerCase().endsWith('_result.json') ||
+        f.toLowerCase().endsWith('_result_reviewed.json')
+      );
+    });
+  
+  return models;
+}
+
 function listModelDirectory(model) {
   const dir = path.join(dataRoot, model);
   if (!fs.existsSync(dir)) return null;
@@ -86,8 +108,10 @@ function writeResultsFiles(model, unreviewed, reviewed) {
 
 // List models and files
 app.get('/api/models', (req, res) => {
+  const availableModels = discoverModels();
   const models = [];
-  for (const model of ['payroll', 'loan']) {
+  
+  for (const model of availableModels) {
     const info = listModelDirectory(model);
     if (!info) continue;
     const { unreviewed, reviewed } = readResultsFiles(model);
@@ -98,6 +122,7 @@ app.get('/api/models', (req, res) => {
       reviewedCount: Object.keys(reviewed).length,
     });
   }
+  
   res.json(models);
 });
 
@@ -257,10 +282,14 @@ app.post('/api/upload-pdf', upload.single('pdf'), (req, res) => {
     }
 
     const { model } = req.body || {};
-    if (!model || !['loan', 'payroll'].includes(model)) {
+    const availableModels = discoverModels();
+    
+    if (!model || !availableModels.includes(model)) {
       // Clean up uploaded file if model is invalid
       fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Valid model (loan or payroll) is required' });
+      return res.status(400).json({ 
+        error: `Valid model is required. Available models: ${availableModels.join(', ')}` 
+      });
     }
 
     const modelDir = path.join(dataRoot, model);
