@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 
 type Model = string
 
@@ -76,23 +76,22 @@ async function markAsUnreviewed(model: Model, file: string): Promise<{ ok: boole
   return res.json()
 }
 
-// UPLOAD FUNCTIONALITY COMMENTED OUT
-// async function uploadPDF(file: File, model: Model): Promise<{ ok: boolean; message: string; filename?: string }> {
-//   const formData = new FormData()
-//   formData.append('pdf', file)
-//   formData.append('model', model)
-//   formData.append('filename', file.name)
-//   
-//   const res = await fetch('/api/upload-pdf', {
-//     method: 'POST',
-//     body: formData,
-//   })
-//   if (!res.ok) {
-//     const error = await res.json().catch(() => ({ error: 'Upload failed' }))
-//     throw new Error(error.error || 'Upload failed')
-//   }
-//   return res.json()
-// }
+async function uploadPDF(file: File, model: Model): Promise<{ ok: boolean; message: string; filename?: string }> {
+  const formData = new FormData()
+  formData.append('pdf', file)
+  formData.append('model', model)
+  formData.append('filename', file.name)
+  
+  const res = await fetch('/api/upload-pdf', {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(error.error || 'Upload failed')
+  }
+  return res.json()
+}
 
 async function downloadModelData(model: Model): Promise<void> {
   try {
@@ -139,7 +138,7 @@ export function App() {
   }
 
   if (!selectedModel) {
-    return <ModelPicker models={models} onPick={setSelectedModel} />
+    return <ModelPicker models={models} onPick={setSelectedModel} onUpload={refreshModels} />
   }
 
   return <ModelView model={selectedModel} onBack={() => setSelectedModel(null)} />
@@ -388,56 +387,55 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
   )
 }
 
-function ModelPicker({ models, onPick }: { models: ModelsResponse; onPick: (m: Model) => void }) {
-  // UPLOAD FUNCTIONALITY COMMENTED OUT
-  // const [uploading, setUploading] = useState(false)
-  // const [uploadMessage, setUploadMessage] = useState<string | null>(null)
-  // const [selectedUploadModel, setSelectedUploadModel] = useState<Model | null>(null)
-  // const fileInputRef = useRef<HTMLInputElement>(null)
+function ModelPicker({ models, onPick, onUpload }: { models: ModelsResponse; onPick: (m: Model) => void; onUpload: () => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [selectedUploadModel, setSelectedUploadModel] = useState<Model | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   const file = e.target.files?.[0]
-  //   if (!file) return
-  //   
-  //   if (!selectedUploadModel) {
-  //     setUploadMessage('Please select a model first')
-  //     return
-  //   }
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    if (!selectedUploadModel) {
+      setUploadMessage('Please select a model first')
+      return
+    }
 
-  //   if (!file.name.toLowerCase().endsWith('.pdf')) {
-  //     setUploadMessage('Please select a PDF file')
-  //     return
-  //   }
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadMessage('Please select a PDF file')
+      return
+    }
 
-  //   handleUpload(file, selectedUploadModel)
-  // }
+    handleUpload(file, selectedUploadModel)
+  }
 
-  // const handleUpload = async (file: File, model: Model) => {
-  //   setUploading(true)
-  //   setUploadMessage(null)
-  //   
-  //   try {
-  //     const result = await uploadPDF(file, model)
-  //     setUploadMessage(result.message || 'Upload successful!')
-  //     onUpload() // Refresh the models list
-  //     // Reset file input
-  //     if (fileInputRef.current) {
-  //       fileInputRef.current.value = ''
-  //     }
-  //   } catch (error) {
-  //     setUploadMessage(error instanceof Error ? error.message : 'Upload failed')
-  //   } finally {
-  //     setUploading(false)
-  //   }
-  // }
+  const handleUpload = async (file: File, model: Model) => {
+    setUploading(true)
+    setUploadMessage(null)
+    
+    try {
+      const result = await uploadPDF(file, model)
+      setUploadMessage(result.message || 'Upload successful!')
+      onUpload() // Refresh the models list
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
 
-  // const handleUploadButtonClick = () => {
-  //   if (!selectedUploadModel) {
-  //     setUploadMessage('Please select a model first')
-  //     return
-  //   }
-  //   fileInputRef.current?.click()
-  // }
+  const handleUploadButtonClick = () => {
+    if (!selectedUploadModel) {
+      setUploadMessage('Please select a model first')
+      return
+    }
+    fileInputRef.current?.click()
+  }
   
   return (
     <div className="splash">
@@ -455,8 +453,7 @@ function ModelPicker({ models, onPick }: { models: ModelsResponse; onPick: (m: M
         })}
       </div>
       
-      {/* UPLOAD UI COMMENTED OUT */}
-      {/* <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', width: 'min(900px, 100%)' }}>
+      <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', width: 'min(900px, 100%)' }}>
         <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>Upload PDF to Data Repository</div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -507,7 +504,7 @@ function ModelPicker({ models, onPick }: { models: ModelsResponse; onPick: (m: M
             {uploadMessage}
           </div>
         )}
-      </div> */}
+      </div>
     </div>
   )
 }
@@ -581,11 +578,41 @@ function ObjectFieldsEditor({ obj, onChange }: { obj: Record<string, any>; onCha
 }
 
 function ArrayOfObjectsEditor({ items, onChange }: { items: Array<Record<string, any>>; onChange: (next: Array<Record<string, any>>) => void }) {
+  const handleAddItem = () => {
+    // Create a new empty object with the same keys as the first item (if available)
+    const template = items.length > 0 ? items[0] : {}
+    const newItem: Record<string, any> = {}
+    Object.keys(template).forEach(key => {
+      newItem[key] = ''
+    })
+    onChange([...items, newItem])
+  }
+
+  const handleDeleteItem = (idx: number) => {
+    const next = items.filter((_, i) => i !== idx)
+    onChange(next)
+  }
+
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       {items.map((item, idx) => (
         <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--panel)' }}>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>Item {idx + 1}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>Item {idx + 1}</div>
+            <button 
+              className="button"
+              onClick={() => handleDeleteItem(idx)}
+              style={{ 
+                fontSize: 11, 
+                padding: '4px 8px',
+                background: '#f8d7da',
+                color: '#721c24',
+                border: '1px solid #f5c6cb'
+              }}
+            >
+              Delete
+            </button>
+          </div>
           <ObjectFieldsEditor obj={item} onChange={(nextObj) => {
             const next = items.slice()
             next[idx] = nextObj
@@ -593,6 +620,20 @@ function ArrayOfObjectsEditor({ items, onChange }: { items: Array<Record<string,
           }} />
         </div>
       ))}
+      <button 
+        className="button"
+        onClick={handleAddItem}
+        style={{ 
+          fontSize: 12, 
+          padding: '8px 16px',
+          background: '#d4edda',
+          color: '#155724',
+          border: '1px solid #c3e6cb',
+          marginTop: 8
+        }}
+      >
+        + Add Item
+      </button>
     </div>
   )
 }
