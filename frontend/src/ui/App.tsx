@@ -155,9 +155,15 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [fileSearch, setFileSearch] = useState('')
 
   useEffect(() => {
     loadFiles()
+  }, [model])
+
+  useEffect(() => {
+    // Reset file search when switching models
+    setFileSearch('')
   }, [model])
 
   const loadFiles = async () => {
@@ -193,6 +199,23 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
     if (!selectedFile) return null
     return `/api/${model}/pdf/${encodeURIComponent(selectedFile)}`
   }, [model, selectedFile])
+
+  const normalizedSearch = fileSearch.trim().toLowerCase()
+  const unreviewedFiles = filesData?.unreviewed ?? []
+  const reviewedFiles = filesData?.reviewed ?? []
+  const noResultFiles = filesData?.noResult ?? []
+
+  const filteredUnreviewed = !normalizedSearch
+    ? unreviewedFiles
+    : unreviewedFiles.filter((f) => f.name.toLowerCase().includes(normalizedSearch))
+
+  const filteredReviewed = !normalizedSearch
+    ? reviewedFiles
+    : reviewedFiles.filter((f) => f.name.toLowerCase().includes(normalizedSearch))
+
+  const filteredNoResult = !normalizedSearch
+    ? noResultFiles
+    : noResultFiles.filter((f) => f.name.toLowerCase().includes(normalizedSearch))
 
   function onChangeField(key: string, value: any) {
     setEdited((prev) => ({ ...(prev || {}), [key]: value }))
@@ -290,6 +313,17 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
       <aside className="sidebar">
         <div>
           <div className="model-heading">{model}</div>
+
+          {/* File search */}
+          <div style={{ padding: '0 8px 8px' }}>
+            <input
+              className="input"
+              type="text"
+              placeholder="Search files..."
+              value={fileSearch}
+              onChange={(e) => setFileSearch(e.target.value)}
+            />
+          </div>
           
           {/* Tabs */}
           <div className="tabs">
@@ -297,19 +331,19 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
               className={`tab ${activeTab === 'unreviewed' ? 'active' : ''}`}
               onClick={() => setActiveTab('unreviewed')}
             >
-              Unreviewed ({filesData?.unreviewed.length || 0})
+              Unreviewed ({filteredUnreviewed.length})
             </button>
             <button
               className={`tab ${activeTab === 'reviewed' ? 'active' : ''}`}
               onClick={() => setActiveTab('reviewed')}
             >
-              Reviewed ({filesData?.reviewed.length || 0})
+              Reviewed ({filteredReviewed.length})
             </button>
           </div>
 
           {/* Files list per active tab */}
           <div style={{ marginBottom: 20 }}>
-            {(activeTab === 'unreviewed' ? filesData?.unreviewed : filesData?.reviewed)?.map((f) => {
+            {(activeTab === 'unreviewed' ? filteredUnreviewed : filteredReviewed).map((f) => {
               const active = selectedFile === f.name
               const isUnreviewed = activeTab === 'unreviewed'
               return (
@@ -322,12 +356,12 @@ function ModelView({ model, onBack }: { model: Model; onBack: () => void }) {
           </div>
 
           {/* Files without results */}
-          {(filesData?.noResult.length || 0) > 0 && (
+          {(filteredNoResult.length || 0) > 0 && (
             <div>
               <h4 style={{ margin: '10px 0 5px 0', fontSize: 14, color: '#666' }}>
-                No Results ({filesData?.noResult.length || 0})
+                No Results ({filteredNoResult.length || 0})
               </h4>
-              {filesData?.noResult.map((f) => {
+              {filteredNoResult.map((f) => {
                 const active = selectedFile === f.name
                 return (
                   <div key={f.name} className={`file-item ${active ? 'active' : ''}`} onClick={() => setSelectedFile(f.name)}>
